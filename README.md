@@ -1,26 +1,31 @@
 # API de Solicitudes Operativas
 
-API REST en **Python + FastAPI + SQL** para gestionar solicitudes internas:
-alta de colaboradores, creación de solicitudes, aprobación/rechazo y un reporte simple.
+Backend REST en **Python + FastAPI + SQL** para digitalizar solicitudes internas:
+alta de colaborador, creación de solicitud, aprobación o rechazo, y un reporte por estado.
 
-Este proyecto demuestra lo que un analista de automatización necesita cuando una empresa pregunta:
-“¿Sabes SQL? ¿Sabes APIs?” — sí, y aquí está el código.
+Es el puente entre un formulario / Power Automate y una base de datos. No es un tutorial: es el núcleo que un flujo low-code necesita cuando Excel y el correo ya no escalan.
 
-## Qué resuelve
+## Problema
 
-En operaciones reales (cambio de turno, autorizaciones, tickets) el proceso suele vivir en Excel, correos y WhatsApp. Esta API es el núcleo de una automatización:
+En operaciones (cambio de turno, autorización, soporte) el proceso vive en Excel, correos y WhatsApp.
+Esta API concentra la regla de negocio:
 
-1. Un formulario o un flujo de Power Automate envía un `POST`.
-2. La API valida al colaborador y guarda la solicitud en SQL.
-3. Un aprobador cambia el estado con `PATCH`.
-4. Un reporte cuenta pendientes / aprobadas / rechazadas.
+1. Un formulario o un flujo envía `POST /api/solicitudes`.
+2. La API valida que el colaborador exista y esté activo, y persiste en SQL.
+3. Un aprobador decide con `PATCH /api/solicitudes/{id}/decision`.
+4. Un reporte agrupa pendientes / aprobadas / rechazadas.
+
+```text
+Formulario web  →  Power Automate (HTTP)  →  FastAPI  →  SQL
+                         ↑
+                   Aprobación / rechazo
+```
 
 ## Stack
 
 - Python 3.11+
-- FastAPI
-- SQLAlchemy + SQLite (SQL real, fácil de migrar a PostgreSQL)
-- Pydantic
+- FastAPI + Pydantic
+- SQLAlchemy 2 + SQLite (SQL real; se puede apuntar a PostgreSQL con `DATABASE_URL`)
 - Pytest
 
 ## Cómo correrla
@@ -33,7 +38,8 @@ pip install -r requirements.txt
 uvicorn app.main:app --reload
 ```
 
-Abre la documentación interactiva: http://127.0.0.1:8000/docs
+- Swagger: http://127.0.0.1:8000/docs
+- Salud: http://127.0.0.1:8000/health
 
 ## Endpoints
 
@@ -41,13 +47,23 @@ Abre la documentación interactiva: http://127.0.0.1:8000/docs
 |---|---|---|
 | GET | `/health` | Salud del servicio |
 | POST | `/api/colaboradores` | Crea colaborador |
-| POST | `/api/solicitudes` | Crea solicitud (JSON) |
+| POST | `/api/solicitudes` | Crea solicitud |
 | GET | `/api/solicitudes` | Lista (filtros `estado`, `tipo`) |
 | GET | `/api/solicitudes/{id}` | Consulta una solicitud |
 | PATCH | `/api/solicitudes/{id}/decision` | Aprueba o rechaza |
-| GET | `/api/reportes/resumen` | Totales por estado |
+| GET | `/api/reportes/resumen` | Totales por estado (`GROUP BY`) |
 
-Ejemplo de alta:
+### Alta de colaborador
+
+```json
+{
+  "documento": "1001234567",
+  "nombre": "Ana Pérez",
+  "area": "Operaciones"
+}
+```
+
+### Alta de solicitud
 
 ```json
 {
@@ -57,23 +73,53 @@ Ejemplo de alta:
 }
 ```
 
+`tipo` acepta: `cambio_turno` | `autorizacion` | `soporte`.
+
+### Decisión
+
+```json
+{ "estado": "aprobada" }
+```
+
+Reglas de negocio que un entrevistador suele preguntar:
+
+- Documento duplicado → `409`
+- Colaborador inexistente o inactivo → `404`
+- Decidir una solicitud que ya no está pendiente → `409`
+
 ## Pruebas
 
 ```bash
 pytest -q
 ```
 
-## Cómo se conecta con Power Automate
+Corren contra SQLite en memoria. No tocan `solicitudes.db`.
 
-En un flujo real:
+## Integración con Power Automate
 
-1. Trigger: elemento creado en SharePoint o envío de formulario.
-2. Acción HTTP: `POST /api/solicitudes` con el JSON.
-3. Condición / aprobación.
-4. Acción HTTP: `PATCH /api/solicitudes/{id}/decision`.
+Ver [docs/integracion-power-automate.md](docs/integracion-power-automate.md).
 
-Eso es exactamente el perfil híbrido: **low-code + API + SQL**.
+Resumen: trigger (SharePoint o formulario) → acción HTTP `POST` → aprobación → HTTP `PATCH`.
+
+## Estructura
+
+```text
+app/
+  main.py              # FastAPI + /health
+  database.py          # motor SQL
+  models.py            # tablas y constraints
+  schemas.py           # contratos Pydantic
+  routers/solicitudes.py
+sql/
+  schema.sql           # modelo en SQL puro
+  seed.sql             # datos de demo
+docs/
+  integracion-power-automate.md
+tests/
+```
 
 ## Autor
 
-Jeisson Javier Silva Beltrán — [github.com/JeissonDeveloper](https://github.com/JeissonDeveloper)
+Jeisson Javier Silva Beltrán  
+Analista de Automatización | Power Platform · Python · SQL · APIs REST  
+[github.com/JeissonDeveloper](https://github.com/JeissonDeveloper)
